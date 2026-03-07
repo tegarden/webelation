@@ -267,8 +267,10 @@ pub fn parse_revelation(data: &[u8], password: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{parse_revelation, parse_revelation_xml, RevelationParseError};
+    use serde_json::Value;
     use std::fs;
     use std::path::PathBuf;
+    use xmltree::{Element, XMLNode};
 
     fn fixture_path(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -279,6 +281,30 @@ mod tests {
 
     fn load_fixture(name: &str) -> Vec<u8> {
         fs::read(fixture_path(name)).expect("fixture should be readable")
+    }
+
+    fn child_elements<'a>(element: &'a Element, name: &str) -> Vec<&'a Element> {
+        element
+            .children
+            .iter()
+            .filter_map(|node| match node {
+                XMLNode::Element(child) if child.name == name => Some(child),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn first_child_text(element: &Element, name: &str) -> Option<String> {
+        child_elements(element, name).into_iter().find_map(|child| {
+            child.children.iter().find_map(|node| match node {
+                XMLNode::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+        })
+    }
+
+    fn json_pointer_str<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
+        value.pointer(pointer).and_then(Value::as_str)
     }
 
     #[test]
@@ -305,5 +331,207 @@ mod tests {
             parse_revelation_xml(&data, "not-the-password").expect_err("expected decrypt failure");
 
         assert!(matches!(error, RevelationParseError::IntegrityMismatch));
+    }
+
+    #[test]
+    fn parse_revelation_xml_reads_simple_fixture() {
+        let data = load_fixture("simple.revelation");
+        let root = parse_revelation_xml(&data, "abc").expect("expected fixture to decrypt");
+
+        assert_eq!(root.name, "revelationdata");
+        assert_eq!(
+            root.attributes.get("version").map(String::as_str),
+            Some("0.5.6")
+        );
+        assert_eq!(
+            root.attributes.get("dataversion").map(String::as_str),
+            Some("1")
+        );
+
+        let top_entries = child_elements(&root, "entry");
+        assert_eq!(top_entries.len(), 2);
+
+        let entry_one = top_entries[0];
+        assert_eq!(entry_one.attributes.get("type").map(String::as_str), Some("generic"));
+        assert_eq!(first_child_text(entry_one, "name").as_deref(), Some("Entry 1"));
+        assert_eq!(
+            first_child_text(entry_one, "description").as_deref(),
+            Some("entry one")
+        );
+        assert_eq!(
+            first_child_text(entry_one, "notes").as_deref(),
+            Some("qux")
+        );
+        let entry_one_fields = child_elements(entry_one, "field");
+        assert_eq!(entry_one_fields.len(), 3);
+        assert_eq!(
+            entry_one_fields[0].attributes.get("id").map(String::as_str),
+            Some("generic-hostname")
+        );
+        assert_eq!(entry_one_fields[0].get_text().as_deref(), Some("foo"));
+        assert_eq!(
+            entry_one_fields[1].attributes.get("id").map(String::as_str),
+            Some("generic-username")
+        );
+        assert_eq!(entry_one_fields[1].get_text().as_deref(), Some("bar"));
+        assert_eq!(
+            entry_one_fields[2].attributes.get("id").map(String::as_str),
+            Some("generic-password")
+        );
+        assert_eq!(entry_one_fields[2].get_text().as_deref(), Some("baz"));
+
+        let folder = top_entries[1];
+        assert_eq!(folder.attributes.get("type").map(String::as_str), Some("folder"));
+        assert_eq!(first_child_text(folder, "name").as_deref(), Some("Folder 1"));
+        assert_eq!(
+            first_child_text(folder, "description").as_deref(),
+            Some("quux")
+        );
+
+        let nested_entries = child_elements(folder, "entry");
+        assert_eq!(nested_entries.len(), 1);
+        let entry_two = nested_entries[0];
+        assert_eq!(entry_two.attributes.get("type").map(String::as_str), Some("website"));
+        assert_eq!(first_child_text(entry_two, "name").as_deref(), Some("Entry 2"));
+        assert_eq!(
+            first_child_text(entry_two, "description").as_deref(),
+            Some("entry two")
+        );
+        assert_eq!(
+            first_child_text(entry_two, "notes").as_deref(),
+            Some("quuuuux")
+        );
+
+        let fields = child_elements(entry_two, "field");
+        assert_eq!(fields.len(), 4);
+        assert_eq!(
+            fields[0].attributes.get("id").map(String::as_str),
+            Some("generic-url")
+        );
+        assert_eq!(fields[0].get_text().as_deref(), Some("http://example.com/"));
+        assert_eq!(
+            fields[1].attributes.get("id").map(String::as_str),
+            Some("generic-username")
+        );
+        assert_eq!(fields[1].get_text().as_deref(), Some("quuux"));
+        assert_eq!(
+            fields[2].attributes.get("id").map(String::as_str),
+            Some("generic-email")
+        );
+        assert_eq!(fields[2].get_text().as_deref(), Some("example@example.com"));
+        assert_eq!(
+            fields[3].attributes.get("id").map(String::as_str),
+            Some("generic-password")
+        );
+        assert_eq!(fields[3].get_text().as_deref(), Some("quuuux"));
+    }
+
+    #[test]
+    fn parse_revelation_reads_simple_fixture_as_json() {
+        let data = load_fixture("simple.revelation");
+        let output = parse_revelation(&data, "abc");
+        let json: Value = serde_json::from_str(&output).expect("expected valid JSON");
+
+        assert_eq!(json_pointer_str(&json, "/name"), Some("revelationdata"));
+        assert_eq!(json_pointer_str(&json, "/attributes/version"), Some("0.5.6"));
+        assert_eq!(json_pointer_str(&json, "/attributes/dataversion"), Some("1"));
+
+        assert_eq!(json_pointer_str(&json, "/children/0/name"), Some("entry"));
+        assert_eq!(json_pointer_str(&json, "/children/0/attributes/type"), Some("generic"));
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/0/children/0/value"),
+            Some("Entry 1")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/1/children/0/value"),
+            Some("entry one")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/3/children/0/value"),
+            Some("qux")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/4/attributes/id"),
+            Some("generic-hostname")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/4/children/0/value"),
+            Some("foo")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/5/attributes/id"),
+            Some("generic-username")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/5/children/0/value"),
+            Some("bar")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/6/attributes/id"),
+            Some("generic-password")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/0/children/6/children/0/value"),
+            Some("baz")
+        );
+
+        assert_eq!(json_pointer_str(&json, "/children/1/name"), Some("entry"));
+        assert_eq!(json_pointer_str(&json, "/children/1/attributes/type"), Some("folder"));
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/0/children/0/value"),
+            Some("Folder 1")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/1/children/0/value"),
+            Some("quux")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/0/name"),
+            Some("name")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/0/children/0/value"),
+            Some("Entry 2")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/1/children/0/value"),
+            Some("entry two")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/3/children/0/value"),
+            Some("quuuuux")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/4/attributes/id"),
+            Some("generic-url")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/4/children/0/value"),
+            Some("http://example.com/")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/5/attributes/id"),
+            Some("generic-username")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/5/children/0/value"),
+            Some("quuux")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/6/attributes/id"),
+            Some("generic-email")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/6/children/0/value"),
+            Some("example@example.com")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/7/attributes/id"),
+            Some("generic-password")
+        );
+        assert_eq!(
+            json_pointer_str(&json, "/children/1/children/4/children/7/children/0/value"),
+            Some("quuuux")
+        );
     }
 }
