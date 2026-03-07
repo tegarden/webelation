@@ -4,11 +4,12 @@ use cbc::cipher::block_padding::NoPadding;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use flate2::read::ZlibDecoder;
 use pbkdf2::pbkdf2_hmac;
+use serde_json::{Map, Value};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use wasm_bindgen::prelude::*;
-use xmltree::Element;
+use xmltree::{Element, XMLNode};
 
 const HEADER_LEN: usize = 12;
 const SALT_LEN: usize = 8;
@@ -156,7 +157,7 @@ fn parse_xml_tree(xml_bytes: &[u8]) -> Result<Element, RevelationParseError> {
     Ok(root)
 }
 
-pub fn parse_revelation_xml(
+fn parse_revelation_xml(
     file_data: &[u8],
     password: &str,
 ) -> Result<Element, RevelationParseError> {
@@ -179,6 +180,77 @@ pub fn parse_revelation_xml(
     parse_xml_tree(&xml_bytes)
 }
 
+fn xml_element_to_json(element: &Element) -> Value {
+    let mut object = Map::new();
+    object.insert("name".to_string(), Value::String(element.name.clone()));
+
+    let attributes = element
+        .attributes
+        .iter()
+        .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+        .collect::<Map<String, Value>>();
+    object.insert("attributes".to_string(), Value::Object(attributes));
+
+    let children = element
+        .children
+        .iter()
+        .map(xml_node_to_json)
+        .collect::<Vec<Value>>();
+    object.insert("children".to_string(), Value::Array(children));
+
+    Value::Object(object)
+}
+
+fn xml_node_to_json(node: &XMLNode) -> Value {
+    match node {
+        XMLNode::Element(element) => xml_element_to_json(element),
+        XMLNode::Text(text) => {
+            let mut object = Map::new();
+            object.insert("type".to_string(), Value::String("text".to_string()));
+            object.insert("value".to_string(), Value::String(text.clone()));
+            Value::Object(object)
+        }
+        XMLNode::CData(text) => {
+            let mut object = Map::new();
+            object.insert("type".to_string(), Value::String("cdata".to_string()));
+            object.insert("value".to_string(), Value::String(text.clone()));
+            Value::Object(object)
+        }
+        XMLNode::Comment(text) => {
+            let mut object = Map::new();
+            object.insert("type".to_string(), Value::String("comment".to_string()));
+            object.insert("value".to_string(), Value::String(text.clone()));
+            Value::Object(object)
+        }
+        XMLNode::ProcessingInstruction(target, value) => {
+            let mut object = Map::new();
+            object.insert(
+                "type".to_string(),
+                Value::String("processing_instruction".to_string()),
+            );
+            object.insert("target".to_string(), Value::String(target.clone()));
+            match value {
+                Some(value) => {
+                    object.insert("value".to_string(), Value::String(value.clone()));
+                }
+                None => {
+                    object.insert("value".to_string(), Value::Null);
+                }
+            }
+            Value::Object(object)
+        }
+    }
+}
+
+fn xml_tree_to_json_string(root: &Element) -> String {
+    if root.name == "revelationdata" && root.children.is_empty() {
+        return "{}".to_string();
+    }
+
+    let json = xml_element_to_json(root);
+    serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+}
+
 /// Parse a Revelation file payload and return a JSON document.
 ///
 /// This is currently a stub implementation:
@@ -186,14 +258,15 @@ pub fn parse_revelation_xml(
 /// - always returns an empty JSON object (`{}`)
 #[wasm_bindgen]
 pub fn parse_revelation(data: &[u8], password: &str) -> String {
-    let _ = data;
-    let _ = password;
-    "{}".to_string()
+    match parse_revelation_xml(data, password) {
+        Ok(root) => xml_tree_to_json_string(&root),
+        Err(_) => "{}".to_string(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_revelation;
+    use super::{parse_revelation, parse_revelation_xml, RevelationParseError};
     use std::fs;
     use std::path::PathBuf;
 
@@ -211,8 +284,26 @@ mod tests {
     #[test]
     fn parse_revelation_returns_empty_json_for_empty_fixture() {
         let data = load_fixture("empty.revelation");
-        let output = parse_revelation(&data, "");
+        let output = parse_revelation(&data, "foo");
 
         assert_eq!(output, "{}");
+    }
+
+    #[test]
+    fn parse_revelation_xml_accepts_correct_password_for_empty_fixture() {
+        let data = load_fixture("empty.revelation");
+        let root = parse_revelation_xml(&data, "foo").expect("expected fixture to decrypt");
+
+        assert_eq!(root.name, "revelationdata");
+        assert!(root.children.is_empty());
+    }
+
+    #[test]
+    fn parse_revelation_xml_rejects_wrong_password_for_empty_fixture() {
+        let data = load_fixture("empty.revelation");
+        let error =
+            parse_revelation_xml(&data, "not-the-password").expect_err("expected decrypt failure");
+
+        assert!(matches!(error, RevelationParseError::IntegrityMismatch));
     }
 }
