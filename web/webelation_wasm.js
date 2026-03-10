@@ -1,0 +1,1 @@
+../rust/pkg/webelation_wasm.js

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Webelation UI Mock</title>
+    <script defer src="./app.js"></script>
+    <script defer src="./alpinejs-3.14.9.min.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f3f0e8;
+        --panel: #fffdf8;
+        --panel-strong: #f7f2e7;
+        --line: #d4cab6;
+        --line-strong: #b7a88d;
+        --text: #2c2518;
+        --muted: #6e624e;
+        --accent: #315f72;
+        --accent-soft: #e1ecf1;
+        --shadow: 0 18px 40px rgba(51, 42, 25, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        background:
+          radial-gradient(circle at top left, rgba(49, 95, 114, 0.12), transparent 28%),
+          linear-gradient(180deg, #f7f4ed 0%, #efe7d7 100%);
+        color: var(--text);
+      }
+
+      .shell {
+        min-height: 100vh;
+        padding: 16px;
+      }
+
+      .app {
+        width: 100%;
+        min-height: calc(100vh - 32px);
+        background: var(--panel);
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, #fcfaf5 0%, #f3ecdf 100%);
+      }
+
+      .toolbar label {
+        font-size: 0.95rem;
+        font-weight: 700;
+      }
+
+      .toolbar input[type="file"] {
+        max-width: 100%;
+        font: inherit;
+        color: var(--muted);
+      }
+
+      .toolbar input[type="password"] {
+        min-width: 180px;
+        padding: 7px 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        min-height: calc(100vh - 96px);
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(225, 236, 241, 0.45), transparent 140px),
+          var(--panel-strong);
+        padding: 18px 14px;
+        overflow: auto;
+      }
+
+      .content {
+        padding: 22px 26px;
+        overflow: auto;
+      }
+
+      .tree {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .tree-row {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        gap: 8px;
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .tree-row:hover {
+        background: rgba(49, 95, 114, 0.08);
+      }
+
+      .tree-row.active {
+        background: var(--accent-soft);
+        color: #163746;
+      }
+
+      .caret {
+        width: 14px;
+        color: var(--muted);
+        flex: 0 0 14px;
+      }
+
+      .tree-label {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 14px 18px;
+        align-items: start;
+      }
+
+      .detail-label {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .detail-value {
+        min-width: 0;
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+
+      .detail-title {
+        margin: 0 0 18px;
+        font-size: 1.6rem;
+        line-height: 1.2;
+      }
+
+      .actions {
+        display: inline-flex;
+        gap: 8px;
+        margin-left: 10px;
+        vertical-align: middle;
+      }
+
+      .button {
+        padding: 4px 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.9rem;
+      }
+
+      .toolbar .button {
+        padding: 7px 12px;
+      }
+
+      .button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .notes {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+
+      .empty-state {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .status {
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      @media (max-width: 720px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          max-height: 42vh;
+        }
+
+        .content {
+          padding: 18px;
+        }
+
+        .detail-grid {
+          grid-template-columns: 1fr;
+          gap: 6px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell" x-data="vaultApp()">
+      <div class="app">
+        <div class="toolbar">
+          <label for="vault-file">Open File:</label>
+          <input id="vault-file" type="file" @change="handleFilePick($event)" />
+          <label for="vault-password">Password:</label>
+          <input
+            id="vault-password"
+            type="password"
+            x-model="password"
+            placeholder="Vault password"
+            @keydown.enter.prevent="parseSelectedFile()"
+          />
+          <button type="button" class="button" @click="parseSelectedFile()" :disabled="isBusy">
+            Load
+          </button>
+        </div>
+
+        <div class="layout">
+          <aside class="sidebar">
+            <div class="tree">
+              <template x-for="node in tree" :key="node.id">
+                <div>
+                  <button
+                    type="button"
+                    class="tree-row"
+                    :class="{ active: selectedId === node.id }"
+                    :style="`padding-left: ${node.depth * 18 + 10}px`"
+                    @click="selectNode(node)"
+                  >
+                    <span class="caret" @click.stop="toggleNode(node)">
+                      <template x-if="node.children?.length">
+                        <span x-text="expanded[node.id] ? '▾' : '▸'"></span>
+                      </template>
+                    </span>
+                    <span class="tree-label" x-text="node.label"></span>
+                  </button>
+                </div>
+              </template>
+            </div>
+          </aside>
+
+          <main class="content">
+            <template x-if="selectedEntry">
+              <div>
+                <h1 class="detail-title" x-text="selectedEntry.title"></h1>
+                <div class="detail-grid">
+                  <div class="detail-label">Title:</div>
+                  <div class="detail-value" x-text="selectedEntry.title"></div>
+
+                  <div class="detail-label">Username:</div>
+                  <div class="detail-value" x-text="selectedEntry.username || '—'"></div>
+
+                  <div class="detail-label">Password:</div>
+                  <div class="detail-value">
+                    <span x-text="showPassword ? selectedEntry.password : maskedPassword(selectedEntry.password)"></span>
+                    <span class="actions">
+                      <button type="button" class="button" @click="showPassword = !showPassword" x-text="showPassword ? 'Hide' : 'Show'"></button>
+                      <button type="button" class="button" @click="copyPassword()">Copy</button>
+                    </span>
+                  </div>
+
+                  <div class="detail-label">URL:</div>
+                  <div class="detail-value">
+                    <template x-if="selectedEntry.url">
+                      <a :href="selectedEntry.url" target="_blank" rel="noreferrer" x-text="selectedEntry.url"></a>
+                    </template>
+                    <template x-if="!selectedEntry.url">
+                      <span>—</span>
+                    </template>
+                  </div>
+
+                  <div class="detail-label">Notes:</div>
+                  <div class="detail-value">
+                    <p class="notes" x-text="selectedEntry.notes || '—'"></p>
+                  </div>
+                </div>
+
+                <div class="status" x-text="statusMessage"></div>
+              </div>
+            </template>
+
+            <template x-if="!selectedEntry">
+              <p class="empty-state">Select an entry from the tree to view its details.</p>
+            </template>
+          </main>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

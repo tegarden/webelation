@@ -1,7 +1,7 @@
 use aes::Aes256;
-use cbc::Decryptor;
 use cbc::cipher::block_padding::NoPadding;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+use cbc::Decryptor;
 use flate2::read::ZlibDecoder;
 use pbkdf2::pbkdf2_hmac;
 use serde_json::{Map, Value};
@@ -96,12 +96,7 @@ fn parse_sections(file_data: &[u8]) -> Result<EncryptedSections<'_>, RevelationP
 
 fn derive_key(password: &str, salt: &[u8]) -> [u8; KEY_LEN] {
     let mut key = [0u8; KEY_LEN];
-    pbkdf2_hmac::<Sha1>(
-        password.as_bytes(),
-        salt,
-        PBKDF2_ITERATIONS,
-        &mut key,
-    );
+    pbkdf2_hmac::<Sha1>(password.as_bytes(), salt, PBKDF2_ITERATIONS, &mut key);
     key
 }
 
@@ -157,10 +152,7 @@ fn parse_xml_tree(xml_bytes: &[u8]) -> Result<Element, RevelationParseError> {
     Ok(root)
 }
 
-fn parse_revelation_xml(
-    file_data: &[u8],
-    password: &str,
-) -> Result<Element, RevelationParseError> {
+fn parse_revelation_xml(file_data: &[u8], password: &str) -> Result<Element, RevelationParseError> {
     let sections = parse_sections(file_data)?;
     let key = derive_key(password, sections.salt);
     let decrypted = decrypt_payload(sections.ciphertext, &key, sections.iv)?;
@@ -180,97 +172,140 @@ fn parse_revelation_xml(
     parse_xml_tree(&xml_bytes)
 }
 
-fn xml_element_to_json(element: &Element) -> Value {
-    let mut object = Map::new();
-    object.insert("name".to_string(), Value::String(element.name.clone()));
-
-    let attributes = element
-        .attributes
-        .iter()
-        .map(|(key, value)| (key.clone(), Value::String(value.clone())))
-        .collect::<Map<String, Value>>();
-    object.insert("attributes".to_string(), Value::Object(attributes));
-
-    let children = element
+fn child_elements<'a>(element: &'a Element, name: &str) -> Vec<&'a Element> {
+    element
         .children
         .iter()
-        .map(xml_node_to_json)
-        .collect::<Vec<Value>>();
-    object.insert("children".to_string(), Value::Array(children));
+        .filter_map(|node| match node {
+            XMLNode::Element(child) if child.name == name => Some(child),
+            _ => None,
+        })
+        .collect()
+}
+
+fn first_child_text(element: &Element, name: &str) -> Option<String> {
+    child_elements(element, name).into_iter().find_map(|child| {
+        child.children.iter().find_map(|node| match node {
+            XMLNode::Text(text) => Some(text.clone()),
+            _ => None,
+        })
+    })
+}
+
+fn field_value(element: &Element, field_id: &str) -> Option<String> {
+    child_elements(element, "field")
+        .into_iter()
+        .find_map(|field| {
+            let matches = field
+                .attributes
+                .get("id")
+                .map(String::as_str)
+                .is_some_and(|id| id == field_id);
+
+            if matches {
+                field.get_text().map(|text| text.to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn node_label(element: &Element) -> String {
+    first_child_text(element, "name").unwrap_or_else(|| "Untitled".to_string())
+}
+
+fn entry_to_json(element: &Element, id: String) -> Value {
+    let entry_type = element
+        .attributes
+        .get("type")
+        .map(String::as_str)
+        .unwrap_or("");
+    let label = node_label(element);
+    let description = first_child_text(element, "description");
+    let notes = first_child_text(element, "notes").or_else(|| description.clone());
+
+    let mut object = Map::new();
+    object.insert("id".to_string(), Value::String(id.clone()));
+    object.insert("type".to_string(), Value::String(entry_type.to_string()));
+    object.insert("label".to_string(), Value::String(label.clone()));
+    object.insert("title".to_string(), Value::String(label));
+    object.insert(
+        "description".to_string(),
+        description.map(Value::String).unwrap_or(Value::Null),
+    );
+    object.insert(
+        "notes".to_string(),
+        notes.map(Value::String).unwrap_or(Value::Null),
+    );
+
+    if entry_type == "folder" {
+        let children = child_elements(element, "entry")
+            .into_iter()
+            .enumerate()
+            .map(|(index, child)| entry_to_json(child, format!("{id}.{index}")))
+            .collect::<Vec<Value>>();
+        object.insert("nodeType".to_string(), Value::String("folder".to_string()));
+        object.insert("children".to_string(), Value::Array(children));
+    } else {
+        let username = field_value(element, "generic-username")
+            .or_else(|| field_value(element, "generic-email"));
+        let password = field_value(element, "generic-password");
+        let url = field_value(element, "generic-url")
+            .or_else(|| field_value(element, "generic-hostname"));
+
+        object.insert("nodeType".to_string(), Value::String("entry".to_string()));
+        object.insert(
+            "username".to_string(),
+            username.map(Value::String).unwrap_or(Value::Null),
+        );
+        object.insert(
+            "password".to_string(),
+            password.map(Value::String).unwrap_or(Value::Null),
+        );
+        object.insert(
+            "url".to_string(),
+            url.map(Value::String).unwrap_or(Value::Null),
+        );
+    }
 
     Value::Object(object)
 }
 
-fn xml_node_to_json(node: &XMLNode) -> Value {
-    match node {
-        XMLNode::Element(element) => xml_element_to_json(element),
-        XMLNode::Text(text) => {
-            let mut object = Map::new();
-            object.insert("type".to_string(), Value::String("text".to_string()));
-            object.insert("value".to_string(), Value::String(text.clone()));
-            Value::Object(object)
-        }
-        XMLNode::CData(text) => {
-            let mut object = Map::new();
-            object.insert("type".to_string(), Value::String("cdata".to_string()));
-            object.insert("value".to_string(), Value::String(text.clone()));
-            Value::Object(object)
-        }
-        XMLNode::Comment(text) => {
-            let mut object = Map::new();
-            object.insert("type".to_string(), Value::String("comment".to_string()));
-            object.insert("value".to_string(), Value::String(text.clone()));
-            Value::Object(object)
-        }
-        XMLNode::ProcessingInstruction(target, value) => {
-            let mut object = Map::new();
-            object.insert(
-                "type".to_string(),
-                Value::String("processing_instruction".to_string()),
-            );
-            object.insert("target".to_string(), Value::String(target.clone()));
-            match value {
-                Some(value) => {
-                    object.insert("value".to_string(), Value::String(value.clone()));
-                }
-                None => {
-                    object.insert("value".to_string(), Value::Null);
-                }
-            }
-            Value::Object(object)
-        }
-    }
-}
+fn revelation_tree_to_json_string(root: &Element) -> String {
+    let entries = child_elements(root, "entry")
+        .into_iter()
+        .enumerate()
+        .map(|(index, entry)| entry_to_json(entry, index.to_string()))
+        .collect::<Vec<Value>>();
 
-fn xml_tree_to_json_string(root: &Element) -> String {
-    if root.name == "revelationdata" && root.children.is_empty() {
-        return "{}".to_string();
-    }
-
-    let json = xml_element_to_json(root);
-    serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+    let mut object = Map::new();
+    object.insert("entries".to_string(), Value::Array(entries));
+    serde_json::to_string(&Value::Object(object)).unwrap_or_else(|_| "{\"entries\":[]}".to_string())
 }
 
 /// Parse a Revelation file payload and return a JSON document.
-///
-/// This is currently a stub implementation:
-/// - `data` is accepted for API shape compatibility, but ignored
-/// - always returns an empty JSON object (`{}`)
 #[wasm_bindgen]
 pub fn parse_revelation(data: &[u8], password: &str) -> String {
     match parse_revelation_xml(data, password) {
-        Ok(root) => xml_tree_to_json_string(&root),
-        Err(_) => "{}".to_string(),
+        Ok(root) => revelation_tree_to_json_string(&root),
+        Err(error) => {
+            let mut object = Map::new();
+            object.insert("error".to_string(), Value::String(error.to_string()));
+            serde_json::to_string(&Value::Object(object))
+                .unwrap_or_else(|_| "{\"error\":\"unknown parse error\"}".to_string())
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_revelation, parse_revelation_xml, RevelationParseError};
+    use super::{
+        child_elements, first_child_text, parse_revelation, parse_revelation_xml,
+        RevelationParseError,
+    };
     use serde_json::Value;
     use std::fs;
     use std::path::PathBuf;
-    use xmltree::{Element, XMLNode};
 
     fn fixture_path(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -283,36 +318,16 @@ mod tests {
         fs::read(fixture_path(name)).expect("fixture should be readable")
     }
 
-    fn child_elements<'a>(element: &'a Element, name: &str) -> Vec<&'a Element> {
-        element
-            .children
-            .iter()
-            .filter_map(|node| match node {
-                XMLNode::Element(child) if child.name == name => Some(child),
-                _ => None,
-            })
-            .collect()
-    }
-
-    fn first_child_text(element: &Element, name: &str) -> Option<String> {
-        child_elements(element, name).into_iter().find_map(|child| {
-            child.children.iter().find_map(|node| match node {
-                XMLNode::Text(text) => Some(text.clone()),
-                _ => None,
-            })
-        })
-    }
-
     fn json_pointer_str<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
         value.pointer(pointer).and_then(Value::as_str)
     }
 
     #[test]
-    fn parse_revelation_returns_empty_json_for_empty_fixture() {
+    fn parse_revelation_returns_empty_entries_for_empty_fixture() {
         let data = load_fixture("empty.revelation");
         let output = parse_revelation(&data, "foo");
 
-        assert_eq!(output, "{}");
+        assert_eq!(output, "{\"entries\":[]}");
     }
 
     #[test]
@@ -352,16 +367,19 @@ mod tests {
         assert_eq!(top_entries.len(), 2);
 
         let entry_one = top_entries[0];
-        assert_eq!(entry_one.attributes.get("type").map(String::as_str), Some("generic"));
-        assert_eq!(first_child_text(entry_one, "name").as_deref(), Some("Entry 1"));
+        assert_eq!(
+            entry_one.attributes.get("type").map(String::as_str),
+            Some("generic")
+        );
+        assert_eq!(
+            first_child_text(entry_one, "name").as_deref(),
+            Some("Entry 1")
+        );
         assert_eq!(
             first_child_text(entry_one, "description").as_deref(),
             Some("entry one")
         );
-        assert_eq!(
-            first_child_text(entry_one, "notes").as_deref(),
-            Some("qux")
-        );
+        assert_eq!(first_child_text(entry_one, "notes").as_deref(), Some("qux"));
         let entry_one_fields = child_elements(entry_one, "field");
         assert_eq!(entry_one_fields.len(), 3);
         assert_eq!(
@@ -381,8 +399,14 @@ mod tests {
         assert_eq!(entry_one_fields[2].get_text().as_deref(), Some("baz"));
 
         let folder = top_entries[1];
-        assert_eq!(folder.attributes.get("type").map(String::as_str), Some("folder"));
-        assert_eq!(first_child_text(folder, "name").as_deref(), Some("Folder 1"));
+        assert_eq!(
+            folder.attributes.get("type").map(String::as_str),
+            Some("folder")
+        );
+        assert_eq!(
+            first_child_text(folder, "name").as_deref(),
+            Some("Folder 1")
+        );
         assert_eq!(
             first_child_text(folder, "description").as_deref(),
             Some("quux")
@@ -391,8 +415,14 @@ mod tests {
         let nested_entries = child_elements(folder, "entry");
         assert_eq!(nested_entries.len(), 1);
         let entry_two = nested_entries[0];
-        assert_eq!(entry_two.attributes.get("type").map(String::as_str), Some("website"));
-        assert_eq!(first_child_text(entry_two, "name").as_deref(), Some("Entry 2"));
+        assert_eq!(
+            entry_two.attributes.get("type").map(String::as_str),
+            Some("website")
+        );
+        assert_eq!(
+            first_child_text(entry_two, "name").as_deref(),
+            Some("Entry 2")
+        );
         assert_eq!(
             first_child_text(entry_two, "description").as_deref(),
             Some("entry two")
@@ -432,106 +462,70 @@ mod tests {
         let output = parse_revelation(&data, "abc");
         let json: Value = serde_json::from_str(&output).expect("expected valid JSON");
 
-        assert_eq!(json_pointer_str(&json, "/name"), Some("revelationdata"));
-        assert_eq!(json_pointer_str(&json, "/attributes/version"), Some("0.5.6"));
-        assert_eq!(json_pointer_str(&json, "/attributes/dataversion"), Some("1"));
-
-        assert_eq!(json_pointer_str(&json, "/children/0/name"), Some("entry"));
-        assert_eq!(json_pointer_str(&json, "/children/0/attributes/type"), Some("generic"));
         assert_eq!(
-            json_pointer_str(&json, "/children/0/children/0/children/0/value"),
-            Some("Entry 1")
+            json_pointer_str(&json, "/entries/0/nodeType"),
+            Some("entry")
         );
+        assert_eq!(json_pointer_str(&json, "/entries/0/type"), Some("generic"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/title"), Some("Entry 1"));
         assert_eq!(
-            json_pointer_str(&json, "/children/0/children/1/children/0/value"),
+            json_pointer_str(&json, "/entries/0/description"),
             Some("entry one")
         );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/3/children/0/value"),
-            Some("qux")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/4/attributes/id"),
-            Some("generic-hostname")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/4/children/0/value"),
-            Some("foo")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/5/attributes/id"),
-            Some("generic-username")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/5/children/0/value"),
-            Some("bar")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/6/attributes/id"),
-            Some("generic-password")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/0/children/6/children/0/value"),
-            Some("baz")
-        );
+        assert_eq!(json_pointer_str(&json, "/entries/0/notes"), Some("qux"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/url"), Some("foo"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/username"), Some("bar"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/password"), Some("baz"));
 
-        assert_eq!(json_pointer_str(&json, "/children/1/name"), Some("entry"));
-        assert_eq!(json_pointer_str(&json, "/children/1/attributes/type"), Some("folder"));
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/0/children/0/value"),
+            json_pointer_str(&json, "/entries/1/nodeType"),
+            Some("folder")
+        );
+        assert_eq!(json_pointer_str(&json, "/entries/1/type"), Some("folder"));
+        assert_eq!(
+            json_pointer_str(&json, "/entries/1/title"),
             Some("Folder 1")
         );
+        assert_eq!(json_pointer_str(&json, "/entries/1/notes"), Some("quux"));
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/1/children/0/value"),
-            Some("quux")
+            json_pointer_str(&json, "/entries/1/children/0/nodeType"),
+            Some("entry")
         );
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/0/name"),
-            Some("name")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/0/children/0/value"),
+            json_pointer_str(&json, "/entries/1/children/0/title"),
             Some("Entry 2")
         );
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/1/children/0/value"),
+            json_pointer_str(&json, "/entries/1/children/0/description"),
             Some("entry two")
         );
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/3/children/0/value"),
+            json_pointer_str(&json, "/entries/1/children/0/notes"),
             Some("quuuuux")
         );
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/4/attributes/id"),
-            Some("generic-url")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/4/children/0/value"),
+            json_pointer_str(&json, "/entries/1/children/0/url"),
             Some("http://example.com/")
         );
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/5/attributes/id"),
-            Some("generic-username")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/5/children/0/value"),
+            json_pointer_str(&json, "/entries/1/children/0/username"),
             Some("quuux")
         );
         assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/6/attributes/id"),
-            Some("generic-email")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/6/children/0/value"),
-            Some("example@example.com")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/7/attributes/id"),
-            Some("generic-password")
-        );
-        assert_eq!(
-            json_pointer_str(&json, "/children/1/children/4/children/7/children/0/value"),
+            json_pointer_str(&json, "/entries/1/children/0/password"),
             Some("quuuux")
+        );
+    }
+
+    #[test]
+    fn parse_revelation_returns_error_json_for_wrong_password() {
+        let data = load_fixture("simple.revelation");
+        let output = parse_revelation(&data, "wrong-password");
+        let json: Value = serde_json::from_str(&output).expect("expected valid JSON");
+
+        assert_eq!(
+            json_pointer_str(&json, "/error"),
+            Some("integrity hash mismatch")
         );
     }
 }
