@@ -5,7 +5,7 @@ const createVaultApp = () => ({
     fileName: "",
     pendingPassword: "",
     passwordDialogFileName: "",
-    showPassword: false,
+    visibleSecrets: {},
     isBusy: false,
     statusMessage: "Loading WebAssembly parser...",
     expanded: {},
@@ -96,9 +96,16 @@ const createVaultApp = () => ({
         label: node.label ?? node.title ?? "Untitled",
         title: node.title ?? node.label ?? "Untitled",
         description: node.description ?? null,
+        url: node.url ?? null,
         username: node.username ?? null,
         password: node.password ?? null,
-        url: node.url ?? null,
+        cardType: node.cardType ?? null,
+        cardNumber: node.cardNumber ?? null,
+        expiryDate: node.expiryDate ?? null,
+        ccv: node.ccv ?? null,
+        pin: node.pin ?? null,
+        location: node.location ?? null,
+        code: node.code ?? null,
         notes: node.notes ?? null,
         children,
       };
@@ -118,23 +125,8 @@ const createVaultApp = () => ({
       };
 
       expandFolders(this.data);
-      this.selectedId = this.findFirstEntryId(this.data);
-      this.showPassword = false;
-    },
-
-    findFirstEntryId(nodes) {
-      for (const node of nodes) {
-        if (node.nodeType === "entry") {
-          return node.id;
-        }
-        if (node.children.length) {
-          const childId = this.findFirstEntryId(node.children);
-          if (childId) {
-            return childId;
-          }
-        }
-      }
-      return null;
+      this.selectedId = null;
+      this.visibleSecrets = {};
     },
 
     closePasswordDialog() {
@@ -240,7 +232,7 @@ const createVaultApp = () => ({
       }
       if (node.nodeType === "entry") {
         this.selectedId = node.id;
-        this.showPassword = false;
+        this.visibleSecrets = {};
       }
     },
 
@@ -269,15 +261,27 @@ const createVaultApp = () => ({
       return password ? "*".repeat(Math.max(8, password.length)) : "—";
     },
 
-    async copyPassword() {
-      if (!this.selectedEntry?.password) {
-        this.statusMessage = "No password available to copy.";
+    isSecretVisible(fieldName) {
+      return Boolean(this.visibleSecrets[fieldName]);
+    },
+
+    toggleSecret(fieldName) {
+      this.visibleSecrets = {
+        ...this.visibleSecrets,
+        [fieldName]: !this.visibleSecrets[fieldName],
+      };
+    },
+
+    async copySecret(fieldName, label) {
+      const value = this.selectedEntry?.[fieldName];
+      if (!value) {
+        this.statusMessage = `No ${label.toLowerCase()} available to copy.`;
         return;
       }
 
       try {
-        await navigator.clipboard.writeText(this.selectedEntry.password);
-        this.statusMessage = `Copied password for ${this.selectedEntry.title}.`;
+        await navigator.clipboard.writeText(value);
+        this.statusMessage = `Copied ${label.toLowerCase()} for ${this.selectedEntry.title}.`;
       } catch (_) {
         this.statusMessage = "Clipboard access failed in this context.";
       }

@@ -3,19 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Webelation UI Mock</title>
+    <title>Webelation UI</title>
     <script defer src="./app.js"></script>
     <script defer src="./alpinejs-3.14.9.min.js"></script>
     <style>
       :root {
         color-scheme: light;
-        --bg: #f3f0e8;
+        --bg: #ffffff;
         --panel: #fffdf8;
         --panel-strong: #f7f2e7;
         --line: #d4cab6;
         --line-strong: #b7a88d;
-        --text: #2c2518;
-        --muted: #6e624e;
+        --text: #444444;
+        --muted: #666666;
         --accent: #315f72;
         --accent-soft: #e1ecf1;
         --shadow: 0 18px 40px rgba(51, 42, 25, 0.12);
@@ -27,26 +27,30 @@
 
       body {
         margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-        background:
-          radial-gradient(circle at top left, rgba(49, 95, 114, 0.12), transparent 28%),
-          linear-gradient(180deg, #f7f4ed 0%, #efe7d7 100%);
+        font-family: Georgia, "Palatino Linotype", "Book Antiqua", Palatino, serif;
+        font-size: 0.95rem;
+        line-height: 1.75;
+        text-rendering: optimizeLegibility;
+        font-kerning: normal;
+        background: var(--bg);
         color: var(--text);
       }
 
       .shell {
-        min-height: 100vh;
+        height: 100vh;
         padding: 16px;
       }
 
       .app {
         width: 100%;
-        min-height: calc(100vh - 32px);
+        height: calc(100vh - 32px);
         background: var(--panel);
         border: 1px solid var(--line-strong);
         border-radius: 14px;
         overflow: hidden;
         box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
       }
 
       .toolbar {
@@ -88,7 +92,9 @@
       .layout {
         display: grid;
         grid-template-columns: 280px minmax(0, 1fr);
-        min-height: calc(100vh - 96px);
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .sidebar {
@@ -98,17 +104,19 @@
           var(--panel-strong);
         padding: 18px 14px;
         overflow: auto;
+        min-height: 0;
       }
 
       .content {
         padding: 22px 26px;
         overflow: auto;
+        min-height: 0;
       }
 
       .tree {
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 1px;
       }
 
       .tree-row {
@@ -116,7 +124,7 @@
         align-items: center;
         width: 100%;
         gap: 8px;
-        padding: 7px 10px;
+        padding: 3px 8px;
         border: 0;
         border-radius: 10px;
         background: transparent;
@@ -124,6 +132,7 @@
         text-align: left;
         cursor: pointer;
         font: inherit;
+        line-height: 1.35;
       }
 
       .tree-row:hover {
@@ -162,6 +171,10 @@
         font-size: 0.95rem;
         font-weight: 700;
         color: var(--muted);
+      }
+
+      .detail-row {
+        display: contents;
       }
 
       .detail-value {
@@ -364,35 +377,117 @@
               <div>
                 <h1 class="detail-title" x-text="selectedEntry.title"></h1>
                 <div class="detail-grid">
-                  <div class="detail-label">Title:</div>
-                  <div class="detail-value" x-text="selectedEntry.title"></div>
+                  <template x-if="selectedEntry.description">
+                    <div class="detail-row">
+                      <div class="detail-label">Description:</div>
+                      <div class="detail-value" x-text="selectedEntry.description"></div>
+                    </div>
+                  </template>
 
-                  <div class="detail-label">Username:</div>
-                  <div class="detail-value" x-text="selectedEntry.username || '—'"></div>
+                  <template x-if="selectedEntry.url">
+                    <div class="detail-row">
+                      <div class="detail-label">URL:</div>
+                      <div class="detail-value">
+                        <a :href="selectedEntry.url" target="_blank" rel="noreferrer" x-text="selectedEntry.url"></a>
+                      </div>
+                    </div>
+                  </template>
 
-                  <div class="detail-label">Password:</div>
-                  <div class="detail-value">
-                    <span x-text="showPassword ? selectedEntry.password : maskedPassword(selectedEntry.password)"></span>
-                    <span class="actions">
-                      <button type="button" class="button" @click="showPassword = !showPassword" x-text="showPassword ? 'Hide' : 'Show'"></button>
-                      <button type="button" class="button" @click="copyPassword()">Copy</button>
-                    </span>
-                  </div>
+                  <template x-if="selectedEntry.username">
+                    <div class="detail-row">
+                      <div class="detail-label">Username:</div>
+                      <div class="detail-value" x-text="selectedEntry.username"></div>
+                    </div>
+                  </template>
 
-                  <div class="detail-label">URL:</div>
-                  <div class="detail-value">
-                    <template x-if="selectedEntry.url">
-                      <a :href="selectedEntry.url" target="_blank" rel="noreferrer" x-text="selectedEntry.url"></a>
-                    </template>
-                    <template x-if="!selectedEntry.url">
-                      <span>—</span>
-                    </template>
-                  </div>
+                  <template x-if="selectedEntry.password">
+                    <div class="detail-row">
+                      <div class="detail-label">Password:</div>
+                      <div class="detail-value">
+                        <span x-text="isSecretVisible('password') ? selectedEntry.password : maskedPassword(selectedEntry.password)"></span>
+                        <span class="actions">
+                          <button type="button" class="button" @click="toggleSecret('password')" x-text="isSecretVisible('password') ? 'Hide' : 'Show'"></button>
+                          <button type="button" class="button" @click="copySecret('password', 'Password')">Copy</button>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
 
-                  <div class="detail-label">Notes:</div>
-                  <div class="detail-value">
-                    <p class="notes" x-text="selectedEntry.notes || '—'"></p>
-                  </div>
+                  <template x-if="selectedEntry.cardType">
+                    <div class="detail-row">
+                      <div class="detail-label">Card Type:</div>
+                      <div class="detail-value" x-text="selectedEntry.cardType"></div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.cardNumber">
+                    <div class="detail-row">
+                      <div class="detail-label">Card Number:</div>
+                      <div class="detail-value" x-text="selectedEntry.cardNumber"></div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.expiryDate">
+                    <div class="detail-row">
+                      <div class="detail-label">Expiry Date:</div>
+                      <div class="detail-value" x-text="selectedEntry.expiryDate"></div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.ccv">
+                    <div class="detail-row">
+                      <div class="detail-label">CCV:</div>
+                      <div class="detail-value">
+                        <span x-text="isSecretVisible('ccv') ? selectedEntry.ccv : maskedPassword(selectedEntry.ccv)"></span>
+                        <span class="actions">
+                          <button type="button" class="button" @click="toggleSecret('ccv')" x-text="isSecretVisible('ccv') ? 'Hide' : 'Show'"></button>
+                          <button type="button" class="button" @click="copySecret('ccv', 'CCV')">Copy</button>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.pin">
+                    <div class="detail-row">
+                      <div class="detail-label">PIN:</div>
+                      <div class="detail-value">
+                        <span x-text="isSecretVisible('pin') ? selectedEntry.pin : maskedPassword(selectedEntry.pin)"></span>
+                        <span class="actions">
+                          <button type="button" class="button" @click="toggleSecret('pin')" x-text="isSecretVisible('pin') ? 'Hide' : 'Show'"></button>
+                          <button type="button" class="button" @click="copySecret('pin', 'PIN')">Copy</button>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.location">
+                    <div class="detail-row">
+                      <div class="detail-label">Location:</div>
+                      <div class="detail-value" x-text="selectedEntry.location"></div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.code">
+                    <div class="detail-row">
+                      <div class="detail-label">Code:</div>
+                      <div class="detail-value">
+                        <span x-text="isSecretVisible('code') ? selectedEntry.code : maskedPassword(selectedEntry.code)"></span>
+                        <span class="actions">
+                          <button type="button" class="button" @click="toggleSecret('code')" x-text="isSecretVisible('code') ? 'Hide' : 'Show'"></button>
+                          <button type="button" class="button" @click="copySecret('code', 'Code')">Copy</button>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template x-if="selectedEntry.notes">
+                    <div class="detail-row">
+                      <div class="detail-label">Notes:</div>
+                      <div class="detail-value">
+                        <p class="notes" x-text="selectedEntry.notes"></p>
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </div>
             </template>
