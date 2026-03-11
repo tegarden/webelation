@@ -147,6 +147,10 @@
         text-overflow: ellipsis;
       }
 
+      .tree-icon {
+        flex: 0 0 auto;
+      }
+
       .detail-grid {
         display: grid;
         grid-template-columns: 120px minmax(0, 1fr);
@@ -347,6 +351,7 @@
                         <span x-text="expanded[node.id] ? '▾' : '▸'"></span>
                       </template>
                     </span>
+                    <span class="tree-icon" x-text="iconForNode(node)"></span>
                     <span class="tree-label" x-text="node.label"></span>
                   </button>
                 </div>

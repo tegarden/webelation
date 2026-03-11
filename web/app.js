@@ -244,6 +244,27 @@ const createVaultApp = () => ({
       }
     },
 
+    iconForNode(node) {
+      if (node.nodeType === "folder") {
+        return "📁";
+      }
+
+      switch (node.type) {
+        case "website":
+          return "🌐";
+        case "creditcard":
+          return "💳";
+        case "door":
+          return "🚪";
+        case "generic":
+          return "🔑";
+        case "shell":
+          return "🐚";
+        default:
+          return "";
+      }
+    },
+
     maskedPassword(password) {
       return password ? "*".repeat(Math.max(8, password.length)) : "—";
     },
