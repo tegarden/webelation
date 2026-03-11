@@ -3,7 +3,8 @@ const createVaultApp = () => ({
     selectedId: null,
     selectedFile: null,
     fileName: "",
-    password: "",
+    pendingPassword: "",
+    passwordDialogFileName: "",
     showPassword: false,
     isBusy: false,
     statusMessage: "Loading WebAssembly parser...",
@@ -54,28 +55,33 @@ const createVaultApp = () => ({
         const wasm = await import("./webelation_wasm.js");
         await wasm.default();
         this.parseRevelation = wasm.parse_revelation;
-        this.statusMessage = "Select a Revelation file and enter its password.";
+        this.statusMessage = "Select a Revelation file.";
       } catch (error) {
         this.statusMessage = "Failed to load the WebAssembly bundle. Build rust/pkg first.";
         console.error(error);
       }
     },
 
-    handleFilePick(event) {
+    async handleFilePick(event) {
       const file = event.target.files?.[0] ?? null;
       this.selectedFile = file;
       this.fileName = file?.name ?? "";
+      event.target.value = "";
 
       if (!file) {
         this.data = [];
         this.selectedId = null;
-        this.statusMessage = "Select a Revelation file and enter its password.";
+        this.statusMessage = "Select a Revelation file.";
         return;
       }
 
-      this.statusMessage = this.password
-        ? `Selected ${file.name}. Click Load to parse it.`
-        : `Selected ${file.name}. Enter the vault password to parse it.`;
+      this.pendingPassword = "";
+      this.passwordDialogFileName = file.name;
+      this.statusMessage = `Selected ${file.name}. Waiting for password.`;
+      this.$refs.passwordDialog.showModal();
+
+      await this.$nextTick();
+      this.$refs.passwordInput?.focus();
     },
 
     normalizeNode(node) {
@@ -131,7 +137,52 @@ const createVaultApp = () => ({
       return null;
     },
 
-    async parseSelectedFile() {
+    closePasswordDialog() {
+      if (this.$refs.passwordDialog?.open) {
+        this.$refs.passwordDialog.close();
+      }
+    },
+
+    async reopenPasswordPrompt(statusMessage) {
+      if (!this.selectedFile) {
+        return;
+      }
+
+      this.pendingPassword = "";
+      this.passwordDialogFileName = this.selectedFile.name;
+      this.statusMessage = statusMessage;
+      this.$refs.passwordDialog.showModal();
+
+      await this.$nextTick();
+      this.$refs.passwordInput?.focus();
+    },
+
+    cancelPasswordPrompt() {
+      const cancelledFile = this.passwordDialogFileName || this.fileName;
+      this.pendingPassword = "";
+      this.passwordDialogFileName = "";
+      this.closePasswordDialog();
+      this.statusMessage = cancelledFile
+        ? `Password entry canceled for ${cancelledFile}.`
+        : "Password entry canceled.";
+    },
+
+    async submitPasswordPrompt() {
+      if (!this.pendingPassword) {
+        this.statusMessage = "Enter the vault password first.";
+        await this.$nextTick();
+        this.$refs.passwordInput?.focus();
+        return;
+      }
+
+      const password = this.pendingPassword;
+      this.pendingPassword = "";
+      this.passwordDialogFileName = "";
+      this.closePasswordDialog();
+      await this.parseSelectedFile(password);
+    },
+
+    async parseSelectedFile(password) {
       if (!this.parseRevelation) {
         this.statusMessage = "The WebAssembly parser is not available yet.";
         return;
@@ -142,7 +193,7 @@ const createVaultApp = () => ({
         return;
       }
 
-      if (!this.password) {
+      if (!password) {
         this.statusMessage = "Enter the vault password first.";
         return;
       }
@@ -152,13 +203,13 @@ const createVaultApp = () => ({
 
       try {
         const buffer = await this.selectedFile.arrayBuffer();
-        const raw = this.parseRevelation(new Uint8Array(buffer), this.password);
+        const raw = this.parseRevelation(new Uint8Array(buffer), password);
         const parsed = JSON.parse(raw);
 
         if (parsed.error) {
           this.data = [];
           this.selectedId = null;
-          this.statusMessage = `Parse failed: ${parsed.error}`;
+          await this.reopenPasswordPrompt(`Parse failed: ${parsed.error}`);
           return;
         }
 
@@ -169,7 +220,7 @@ const createVaultApp = () => ({
       } catch (error) {
         this.data = [];
         this.selectedId = null;
-        this.statusMessage = "The selected file could not be parsed.";
+        await this.reopenPasswordPrompt("The selected file could not be parsed.");
         console.error(error);
       } finally {
         this.isBusy = false;

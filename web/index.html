@@ -67,17 +67,13 @@
       .toolbar input[type="file"] {
         max-width: 100%;
         font: inherit;
-        color: var(--muted);
+        color: transparent;
       }
 
-      .toolbar input[type="password"] {
-        min-width: 180px;
-        padding: 7px 10px;
-        border: 1px solid var(--line-strong);
-        border-radius: 10px;
-        background: #fff;
-        color: var(--text);
+      .toolbar input[type="file"]::file-selector-button {
+        margin-right: 0;
         font: inherit;
+        color: var(--muted);
       }
 
       .layout {
@@ -210,6 +206,63 @@
         font-size: 0.92rem;
       }
 
+      .password-dialog {
+        width: min(420px, calc(100vw - 32px));
+        padding: 0;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        background: var(--panel);
+        color: var(--text);
+      }
+
+      .password-dialog::backdrop {
+        background: rgba(35, 28, 18, 0.35);
+        backdrop-filter: blur(4px);
+      }
+
+      .dialog-card {
+        padding: 22px;
+      }
+
+      .dialog-title {
+        margin: 0 0 10px;
+        font-size: 1.35rem;
+      }
+
+      .dialog-copy {
+        margin: 0 0 16px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .dialog-field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .dialog-field label {
+        font-size: 0.95rem;
+        font-weight: 700;
+      }
+
+      .dialog-field input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
       @media (max-width: 720px) {
         .layout {
           grid-template-columns: 1fr;
@@ -237,19 +290,41 @@
       <div class="app">
         <div class="toolbar">
           <label for="vault-file">Open File:</label>
-          <input id="vault-file" type="file" @change="handleFilePick($event)" />
-          <label for="vault-password">Password:</label>
-          <input
-            id="vault-password"
-            type="password"
-            x-model="password"
-            placeholder="Vault password"
-            @keydown.enter.prevent="parseSelectedFile()"
-          />
-          <button type="button" class="button" @click="parseSelectedFile()" :disabled="isBusy">
-            Load
-          </button>
+          <input id="vault-file" type="file" x-ref="fileInput" @change="handleFilePick($event)" />
         </div>
+
+        <dialog
+          class="password-dialog"
+          x-ref="passwordDialog"
+          @cancel.prevent="cancelPasswordPrompt()"
+          @close="pendingPassword = ''"
+        >
+          <form class="dialog-card" method="dialog" @submit.prevent="submitPasswordPrompt()">
+            <h2 class="dialog-title">Unlock Revelation File</h2>
+            <p class="dialog-copy">
+              Enter the password for <strong x-text="passwordDialogFileName || fileName"></strong>.
+            </p>
+            <div class="dialog-field">
+              <label for="dialog-password">Password</label>
+              <input
+                id="dialog-password"
+                x-ref="passwordInput"
+                type="password"
+                x-model="pendingPassword"
+                placeholder="Vault password"
+                :disabled="isBusy"
+              />
+            </div>
+            <div class="dialog-actions">
+              <button type="button" class="button" @click="cancelPasswordPrompt()" :disabled="isBusy">
+                Cancel
+              </button>
+              <button type="submit" class="button" :disabled="isBusy">
+                Load
+              </button>
+            </div>
+          </form>
+        </dialog>
 
         <div class="layout">
           <aside class="sidebar">
