@@ -76,6 +76,15 @@
         color: var(--muted);
       }
 
+      .toolbar-status {
+        min-width: 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .layout {
         display: grid;
         grid-template-columns: 280px minmax(0, 1fr);
@@ -200,12 +209,6 @@
         font-style: italic;
       }
 
-      .status {
-        margin-top: 20px;
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
       .password-dialog {
         width: min(420px, calc(100vw - 32px));
         padding: 0;
@@ -291,6 +294,7 @@
         <div class="toolbar">
           <label for="vault-file">Open File:</label>
           <input id="vault-file" type="file" x-ref="fileInput" @change="handleFilePick($event)" />
+          <div class="toolbar-status" x-text="statusMessage"></div>
         </div>
 
         <dialog
@@ -385,8 +389,6 @@
                     <p class="notes" x-text="selectedEntry.notes || '—'"></p>
                   </div>
                 </div>
-
-                <div class="status" x-text="statusMessage"></div>
               </div>
             </template>
 
