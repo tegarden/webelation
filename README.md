@@ -121,31 +121,3 @@ Frontend code should:
 * keep the UI simple and readable
 * treat the Rust module as the source of truth for parsing
 
----
-
-# Future Enhancements (Optional)
-
-Possible future improvements:
-
-* better search/filtering of entries
-* improved password entry UI
-* entry categorization display
-* progressive loading for large files
-
-The initial goal is simply:
-
-**Open a Revelation file and view its contents in the browser.**
-
----
-
-# Status
-
-Early project skeleton.
-
-Initial tasks:
-
-* implement Rust crate skeleton
-* add WebAssembly bindings
-* create minimal HTML page with file chooser
-* connect frontend to Rust parser
-
