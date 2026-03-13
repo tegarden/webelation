@@ -277,6 +277,12 @@ fn entry_to_json(element: &Element, id: String) -> Value {
                 .or_else(|| field_value(element, "generic-pin"))
                 .or_else(|| field_value(element, "creditcard-pincode")),
         );
+        insert_optional_string(
+            &mut object,
+            "location",
+            field_value(element, "generic-location"),
+        );
+        insert_optional_string(&mut object, "code", field_value(element, "generic-code"));
     }
 
     Value::Object(object)
@@ -559,6 +565,22 @@ mod tests {
         assert_eq!(json_pointer_str(&json, "/entries/0/expiryDate"), Some("12/34"));
         assert_eq!(json_pointer_str(&json, "/entries/0/ccv"), Some("567"));
         assert_eq!(json_pointer_str(&json, "/entries/0/pin"), Some("8901"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/notes"), Some("My Notes"));
+    }
+
+    #[test]
+    fn parse_revelation_reads_door_fixture_as_json() {
+        let data = load_fixture("door.revelation");
+        let output = parse_revelation(&data, "abc");
+        let json: Value = serde_json::from_str(&output).expect("expected valid JSON");
+
+        assert_eq!(json_pointer_str(&json, "/entries/0/type"), Some("door"));
+        assert_eq!(
+            json_pointer_str(&json, "/entries/0/description"),
+            Some("My Description")
+        );
+        assert_eq!(json_pointer_str(&json, "/entries/0/location"), Some("My Location"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/code"), Some("1234"));
         assert_eq!(json_pointer_str(&json, "/entries/0/notes"), Some("My Notes"));
     }
 }
