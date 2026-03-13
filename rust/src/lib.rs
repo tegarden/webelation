@@ -210,6 +210,13 @@ fn field_value(element: &Element, field_id: &str) -> Option<String> {
         })
 }
 
+fn insert_optional_string(object: &mut Map<String, Value>, key: &str, value: Option<String>) {
+    object.insert(
+        key.to_string(),
+        value.map(Value::String).unwrap_or(Value::Null),
+    );
+}
+
 fn node_label(element: &Element) -> String {
     first_child_text(element, "name").unwrap_or_else(|| "Untitled".to_string())
 }
@@ -229,14 +236,8 @@ fn entry_to_json(element: &Element, id: String) -> Value {
     object.insert("type".to_string(), Value::String(entry_type.to_string()));
     object.insert("label".to_string(), Value::String(label.clone()));
     object.insert("title".to_string(), Value::String(label));
-    object.insert(
-        "description".to_string(),
-        description.map(Value::String).unwrap_or(Value::Null),
-    );
-    object.insert(
-        "notes".to_string(),
-        notes.map(Value::String).unwrap_or(Value::Null),
-    );
+    insert_optional_string(&mut object, "description", description);
+    insert_optional_string(&mut object, "notes", notes);
 
     if entry_type == "folder" {
         let children = child_elements(element, "entry")
@@ -254,17 +255,27 @@ fn entry_to_json(element: &Element, id: String) -> Value {
             .or_else(|| field_value(element, "generic-hostname"));
 
         object.insert("nodeType".to_string(), Value::String("entry".to_string()));
-        object.insert(
-            "username".to_string(),
-            username.map(Value::String).unwrap_or(Value::Null),
+        insert_optional_string(&mut object, "username", username);
+        insert_optional_string(&mut object, "password", password);
+        insert_optional_string(&mut object, "url", url);
+        insert_optional_string(&mut object, "cardType", field_value(element, "creditcard-cardtype"));
+        insert_optional_string(
+            &mut object,
+            "cardNumber",
+            field_value(element, "creditcard-cardnumber"),
         );
-        object.insert(
-            "password".to_string(),
-            password.map(Value::String).unwrap_or(Value::Null),
+        insert_optional_string(
+            &mut object,
+            "expiryDate",
+            field_value(element, "creditcard-expirydate"),
         );
-        object.insert(
-            "url".to_string(),
-            url.map(Value::String).unwrap_or(Value::Null),
+        insert_optional_string(&mut object, "ccv", field_value(element, "creditcard-ccv"));
+        insert_optional_string(
+            &mut object,
+            "pin",
+            field_value(element, "creditcard-pin")
+                .or_else(|| field_value(element, "generic-pin"))
+                .or_else(|| field_value(element, "creditcard-pincode")),
         );
     }
 
@@ -527,5 +538,27 @@ mod tests {
             json_pointer_str(&json, "/error"),
             Some("integrity hash mismatch")
         );
+    }
+
+    #[test]
+    fn parse_revelation_reads_creditcard_fixture_as_json() {
+        let data = load_fixture("creditcard.revelation");
+        let output = parse_revelation(&data, "abc");
+        let json: Value = serde_json::from_str(&output).expect("expected valid JSON");
+
+        assert_eq!(json_pointer_str(&json, "/entries/0/type"), Some("creditcard"));
+        assert_eq!(
+            json_pointer_str(&json, "/entries/0/description"),
+            Some("My Description")
+        );
+        assert_eq!(json_pointer_str(&json, "/entries/0/cardType"), Some("Visa"));
+        assert_eq!(
+            json_pointer_str(&json, "/entries/0/cardNumber"),
+            Some("1211109876543210")
+        );
+        assert_eq!(json_pointer_str(&json, "/entries/0/expiryDate"), Some("12/34"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/ccv"), Some("567"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/pin"), Some("8901"));
+        assert_eq!(json_pointer_str(&json, "/entries/0/notes"), Some("My Notes"));
     }
 }
